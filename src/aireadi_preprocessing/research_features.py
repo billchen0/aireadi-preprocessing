@@ -1,7 +1,9 @@
 """Historical study features: opt-in, requiring reviewed names and units.
 
 Not clinical diagnoses or validated general-purpose cognitive scores.
-See docs/migration.md for limitations.
+Verify input units before use; these helpers preserve historical study formulas.
+Urine features expect mg/mL; normalize verified units first. Custom MoCA
+aggregates are study features, not validated universal cognitive scores.
 """
 import pandas as pd
 import numpy as np

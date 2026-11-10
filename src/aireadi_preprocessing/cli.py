@@ -1,6 +1,5 @@
 """Command-line interface. Outputs must be outside the dataset and package."""
 import argparse
-from dataclasses import asdict
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -9,20 +8,27 @@ import platform
 import importlib.metadata
 from . import __version__
 from .cgm import CGMConfig, preprocess
-from .tables import read_table, pivot_measurements
+from .tables import read_table, pivot_measurements, measurement_mapping
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--version", action="version", version=__version__)
-    parser.add_argument("--dataset-root", type=Path, required=True)
-    parser.add_argument("--output", type=Path, required=True, help="New directory outside dataset and package")
-    parser.add_argument("--release", required=True, choices=["3.0.0"])
-    parser.add_argument("--steps", nargs="+", choices=["cgm", "clinical", "participants", "ecg"], default=["cgm"])
+    parser.add_argument("dataset", type=Path, nargs="?", help="AI-READI dataset directory")
+    parser.add_argument("destination", type=Path, nargs="?", help="New output directory")
+    parser.add_argument("--dataset-root", type=Path, help=argparse.SUPPRESS)
+    parser.add_argument("--output", type=Path, help=argparse.SUPPRESS)
+    parser.add_argument("--release", default="3.0.0", choices=["3.0.0"])
+    parser.add_argument("--steps", nargs="+", choices=["cgm", "clinical", "participants", "ecg"], default=["clinical"])
     parser.add_argument("--cgm-config", type=Path, help="JSON matching CGMConfig fields")
-    parser.add_argument("--measurement-mapping", type=Path, help="Reviewed concept_id,name,unit CSV")
+    parser.add_argument("--mapping", "--measurement-mapping", dest="measurement_mapping", type=Path, help="Selected concept_id,name,unit CSV")
     args = parser.parse_args()
-    root, output = args.dataset_root.resolve(), args.output.resolve()
+    if args.dataset and args.dataset_root or args.destination and args.output:
+        parser.error("Specify each path once")
+    dataset, destination = args.dataset or args.dataset_root, args.destination or args.output
+    if dataset is None or destination is None:
+        parser.error("Provide the dataset and output paths")
+    root, output = dataset.resolve(), destination.resolve()
     package = Path(__file__).resolve().parents[2]
     if not root.is_dir():
         parser.error("Dataset root does not exist")
@@ -61,9 +67,13 @@ def main():
                 fingerprint(path, name)
                 table = read_table(path)
                 save(table, f"{name}_long.csv")
-                if name == "measurement" and args.measurement_mapping:
-                    fingerprint(args.measurement_mapping, "measurement_mapping")
-                    mapping = read_mapping(args.measurement_mapping)
+                if name == "measurement":
+                    if args.measurement_mapping:
+                        fingerprint(args.measurement_mapping, "measurement_mapping")
+                        mapping = read_mapping(args.measurement_mapping)
+                    else:
+                        mapping = measurement_mapping(table)
+                    save(mapping, "clinical_mapping.csv")
                     save(pivot_measurements(table, mapping), "measurement_wide.csv")
         for step, relative, sep in [("participants", "participants.tsv", "\t"), ("ecg", "cardiac_ecg/manifest.tsv", "\t")]:
             if step in args.steps:

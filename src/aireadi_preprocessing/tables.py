@@ -31,3 +31,23 @@ def pivot_measurements(df, mapping):
     selected["value_as_number"] = pd.to_numeric(selected.value_as_number.replace("", float("nan")), errors="raise")
     result = selected.pivot(index="person_id", columns="name", values="value_as_number")
     return result.reindex(index=df.person_id.drop_duplicates(), columns=mapping.name).reset_index()
+
+
+def measurement_mapping(df):
+    """Read the code, label and unit dictionary carried in measurement.csv."""
+    needed = {"measurement_concept_id", "measurement_source_value", "unit_source_value", "value_as_number"}
+    if not needed.issubset(df.columns):
+        raise ValueError("Automatic mapping needs measurement_source_value and unit_source_value; supply an explicit mapping instead")
+    numeric = df[df.value_as_number.ne("")].copy()
+    mapping = numeric[["measurement_concept_id", "measurement_source_value", "unit_source_value"]].drop_duplicates()
+    mapping = mapping.rename(columns={"measurement_concept_id": "concept_id", "measurement_source_value": "name", "unit_source_value": "unit"})
+    if mapping.empty:
+        raise ValueError("No numeric measurements found")
+    if mapping.concept_id.isin(["", "0"]).any():
+        raise ValueError("Unmapped numeric concepts found; supply an explicit mapping")
+    if mapping.concept_id.duplicated().any():
+        raise ValueError("A concept has multiple source labels or units; supply an explicit concept_id,name,unit mapping")
+    mapping.loc[mapping.name.eq(""), "name"] = "concept_" + mapping.loc[mapping.name.eq(""), "concept_id"]
+    repeated_names = mapping.name.duplicated(keep=False) | mapping.name.eq("person_id")
+    mapping.loc[repeated_names, "name"] += " [" + mapping.loc[repeated_names, "concept_id"] + "]"
+    return mapping.sort_values("concept_id").reset_index(drop=True)

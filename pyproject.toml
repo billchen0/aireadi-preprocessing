@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aireadi-preprocessing"
-version = "0.1.0"
+version = "0.2.0"
 description = "Convert AI-READI source formats into tables for data science workflows"
 license = "MIT"
 license-files = ["LICENSE"]
@@ -17,13 +17,10 @@ Repository = "https://github.com/billchen0/aireadi-preprocessing"
 Issues = "https://github.com/billchen0/aireadi-preprocessing/issues"
 
 [project.optional-dependencies]
-test = ["pytest>=8"]
+notebook = ["jupyterlab>=4"]
 
 [project.scripts]
 aireadi-preprocess = "aireadi_preprocessing.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
