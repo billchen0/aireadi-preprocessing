@@ -1,3 +1,2 @@
 include load_data.ipynb
-recursive-include scripts *.R
 prune .local

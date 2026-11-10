@@ -1,6 +1,5 @@
 """Load AI-READI files into pandas tables."""
 from pathlib import Path
-from .cgm import CGMConfig, preprocess
 from .tables import read_table, pivot_measurements, measurement_mapping
 
 
@@ -21,10 +20,3 @@ def load_clinical(dataset, mapping=None):
     else:
         mapping = mapping.copy().astype(str)
     return pivot_measurements(table, mapping)
-
-
-def load_cgm(dataset, config=None):
-    """Return id,time,gl,glucose_status from participant CGM JSON files."""
-    directory = Path(dataset) / "wearable_blood_glucose/continuous_glucose_monitoring/dexcom_g6"
-    frame, _ = preprocess(directory, config or CGMConfig())
-    return frame

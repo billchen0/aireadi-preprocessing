@@ -4,13 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aireadi-preprocessing"
-version = "0.2.0"
+version = "0.3.0"
 description = "Convert AI-READI source formats into tables for data science workflows"
 license = "MIT"
 license-files = ["LICENSE"]
 readme = "README.md"
 requires-python = ">=3.10"
-dependencies = ["pandas>=2.2,<3", "numpy>=1.26,<3"]
+dependencies = ["pandas>=2.2,<3"]
 
 [project.urls]
 Repository = "https://github.com/billchen0/aireadi-preprocessing"
