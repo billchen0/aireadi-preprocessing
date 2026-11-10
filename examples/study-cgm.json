@@ -1,0 +1,9 @@
+{
+  "initial_hours": 12,
+  "coverage": 0.7,
+  "min_days": 7,
+  "remove_partial_edges": true,
+  "max_gap_hours": 12,
+  "calendar_timezone": "UTC",
+  "censored": "boundary"
+}
