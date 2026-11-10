@@ -1,6 +1,6 @@
 # AI-READI preprocessing
 
-Extracted from Bill Chen's AI-READI analysis pipeline. This package converts clinical OMOP tables into CSV files with one row per participant and named measurement columns.
+This package converts clinical OMOP tables into CSV files with one row per participant and named measurement columns.
 
 | Modality | AI-READI format | Tabular output format |
 | --- | --- | --- |
@@ -22,35 +22,54 @@ Choose a new output folder outside the dataset and repository. The command also 
 
 ## How the mapping works
 
-AI-READI's [OMOP mapping table](https://docs.aireadi.org/docs/3/dataset/clinical-data/OMOP-Clinical-Data-Structure/OMOP-Mapping-Table) defines the codes. Its [source JSON](https://github.com/AI-READI/ai-readi-docs/blob/main/docs/static/json/mappings.json) and [lab dictionary](https://github.com/AI-READI/ai-readi-docs/blob/main/docs/static/json/clinicalLabData.json) let you check a measurement:
+The [AI-READI mapping JSON](https://github.com/AI-READI/ai-readi-docs/blob/main/docs/static/json/mappings.json) defines the identifiers. This is an excerpt of its HbA1c entry:
 
-- Match the documentation's `TARGET_CONCEPT_ID` to the data's `measurement_concept_id`.
-- Read `TARGET_CONCEPT_NAME` for the clinical definition. In the lab dictionary, `Name` is the shorter label and `Units` gives the expected unit.
-- The package builds its default mapping from your actual file: `measurement_concept_id` → `measurement_source_value` (column label), with `unit_source_value` retained in `clinical_mapping.csv`. It does not match measurements by similar names or download a dictionary at runtime.
-- Pivot `value_as_number` into the named columns, using `person_id` as the row key. Only numeric measurements are selected automatically. Observation values remain in the long table.
-
-For example, the documentation identifies `3004410` as HbA1c. These fictional input rows:
-
-```csv
-person_id,measurement_concept_id,measurement_source_value,unit_source_value,value_as_number
-0007,3004410,HbA1c (%),%,5.5
-0012,3004410,HbA1c (%),%,6.0
+```json
+{
+  "FIELD_ID": "import_hba1c",
+  "SRC_CODE": "4548-4",
+  "TARGET_CONCEPT_ID": "3004410",
+  "TARGET_CONCEPT_NAME": "Hemoglobin A1c/Hemoglobin.total in Blood",
+  "TARGET_DOMAIN_ID": "Measurement"
+}
 ```
 
-become:
+- `FIELD_ID` identifies the original collection field.
+- `SRC_CODE` is the source terminology code, here the LOINC code for HbA1c.
+- `TARGET_CONCEPT_ID` is the OMOP identifier matched to `measurement_concept_id` in the data. For this measurement, use `3004410`, not `4548-4`.
+- `TARGET_CONCEPT_NAME` gives the clinical meaning. The [lab dictionary](https://github.com/AI-READI/ai-readi-docs/blob/main/docs/static/json/clinicalLabData.json) also gives the shorter `Name` (HbA1c) and `Units` (%).
 
-```csv
-person_id,HbA1c (%)
-0007,5.5
-0012,6.0
-```
+The package extracts the working mapping from your downloaded `measurement.csv`:
 
-To select measurements or change their labels, supply a mapping CSV:
+| Input field | Extracted mapping field | Role |
+| --- | --- | --- |
+| `measurement_concept_id` | `concept_id` | Identifier used to match rows |
+| `measurement_source_value` | `name` | Output column label, such as `HbA1c (%)` |
+| `unit_source_value` | `unit` | Unit checked before conversion |
 
-```csv
-concept_id,name,unit
-3004410,HbA1c (%),%
-```
+1. Select rows with a numeric value and extract the distinct code/label/unit combinations.
+2. Save that dictionary as `clinical_mapping.csv`. The documentation JSON explains the codes; it is not downloaded or parsed during conversion.
+3. Match measurement rows to the dictionary by code, then pivot `value_as_number` into columns using `person_id` as the row key.
+
+For example, these fictional input rows:
+
+| person_id | measurement_concept_id | measurement_source_value | unit_source_value | value_as_number |
+| --- | --- | --- | --- | --- |
+| 0007 | 3004410 | HbA1c (%) | % | 5.5 |
+| 0012 | 3004410 | HbA1c (%) | % | 6.0 |
+
+produce:
+
+| person_id | HbA1c (%) |
+| --- | --- |
+| 0007 | 5.5 |
+| 0012 | 6.0 |
+
+To select measurements or change their labels, create a mapping CSV with these columns:
+
+| concept_id | name | unit |
+| --- | --- | --- |
+| 3004410 | HbA1c (%) | % |
 
 ```sh
 aireadi-preprocess /path/to/ai-readi /path/to/tables --mapping my_mapping.csv
@@ -58,7 +77,8 @@ aireadi-preprocess /path/to/ai-readi /path/to/tables --mapping my_mapping.csv
 
 - Units must match the source; the package does not convert them.
 - Missing measurements stay empty. Participant IDs stay as text.
-- Repeated participant/code pairs or conflicting code definitions stop the conversion so you can choose a visit, selection or aggregation.
+- Repeated participant/code pairs or conflicting definitions stop the conversion so you can choose a visit, selection or aggregation.
+- Observation values remain in the long table.
 
 ## Notebook
 
