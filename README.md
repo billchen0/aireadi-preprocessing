@@ -39,24 +39,33 @@ The [AI-READI mapping JSON](https://github.com/AI-READI/ai-readi-docs/blob/main/
 - `TARGET_CONCEPT_ID` is the OMOP identifier matched to `measurement_concept_id` in the data. For this measurement, use `3004410`, not `4548-4`.
 - `TARGET_CONCEPT_NAME` gives the clinical meaning. The [lab dictionary](https://github.com/AI-READI/ai-readi-docs/blob/main/docs/static/json/clinicalLabData.json) also gives the shorter `Name` (HbA1c) and `Units` (%).
 
-The package extracts the working mapping from your downloaded `measurement.csv`:
+Variable names are standardized because some source labels are truncated or difficult to find with a column search. The bundled [mappings.json](src/aireadi_preprocessing/mappings.json) maps each identifier to a readable name:
 
-| Input field | Extracted mapping field | Role |
+```json
+{
+  "3004410": "HbA1c (%)",
+  "3004501": "Glucose (mg/dL)",
+  "2005200344": "MoCA Trail Making Score"
+}
+```
+
+| Identifier | Source label | Standardized column name |
 | --- | --- | --- |
-| `measurement_concept_id` | `concept_id` | Identifier used to match rows |
-| `measurement_source_value` | `name` | Output column label, such as `HbA1c (%)` |
-| `unit_source_value` | `unit` | Unit checked before conversion |
+| 3004410 | `import_hba1c, Hemoglobin A1c/Hemoglobin.total in ` | HbA1c (%) |
+| 3004501 | `import_glucose, Glucose [Mass/volume] in Serum or` | Glucose (mg/dL) |
+| 2005200344 | `trails_visuospatial_executive` | MoCA Trail Making Score |
 
-1. Select rows with a numeric value and extract the distinct code/label/unit combinations.
-2. Save that dictionary as `clinical_mapping.csv`. The documentation JSON explains the codes; it is not downloaded or parsed during conversion.
-3. Match measurement rows to the dictionary by code, then pivot `value_as_number` into columns using `person_id` as the row key.
+- Match `measurement_concept_id` to the bundled identifier; use its standardized name as the column header.
+- Put `value_as_number` in that column, with one row per `person_id`. For repeated participant/code pairs, take the first nonmissing value in file order, matching the original extraction rule.
+- Save the selected dictionary and observed source units as `clinical_mapping.csv`. Naming does not convert units or change numerical values. The original long table retains all source fields.
+- The dictionary groups measurements by lab, vision, physical assessment, MoCA and monofilament. It also retains observation names for reference; observation output remains in long format.
 
 For example, these fictional input rows:
 
 | person_id | measurement_concept_id | measurement_source_value | unit_source_value | value_as_number |
 | --- | --- | --- | --- | --- |
-| 0007 | 3004410 | HbA1c (%) | % | 5.5 |
-| 0012 | 3004410 | HbA1c (%) | % | 6.0 |
+| 0007 | 3004410 | import_hba1c, Hemoglobin A1c/Hemoglobin.total in | % | 5.5 |
+| 0012 | 3004410 | import_hba1c, Hemoglobin A1c/Hemoglobin.total in | % | 6.0 |
 
 produce:
 
@@ -75,9 +84,9 @@ To select measurements or change their labels, create a mapping CSV with these c
 aireadi-preprocess /path/to/ai-readi /path/to/tables --mapping my_mapping.csv
 ```
 
-- Units must match the source; the package does not convert them.
+- In a custom mapping, `unit` is optional. When supplied, it must match the source exactly. No unit conversion is performed.
 - Missing measurements stay empty. Participant IDs stay as text.
-- Repeated participant/code pairs or conflicting definitions stop the conversion so you can choose a visit, selection or aggregation.
+- Renaming preserves raw measurement values; it does not add calculated indices or combine measurements across eyes.
 - Observation values remain in the long table.
 
 ## Notebook

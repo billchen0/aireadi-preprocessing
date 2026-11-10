@@ -6,10 +6,10 @@ from .tables import read_table, pivot_measurements, measurement_mapping
 def load_clinical(dataset, mapping=None):
     """Return a participant-by-feature numeric measurement table.
 
-    Without a mapping, use code/label/unit pairs embedded in measurement.csv.
-    Supply a DataFrame or CSV path with concept_id,name,unit to select features.
-    Repeated participant/concept measurements require an explicit aggregation
-    upstream; this function does not choose an observation silently.
+    Default names come from the bundled concept-ID dictionary.
+    An optional CSV/DataFrame can select or rename codes (concept_id,name;
+    optional unit for exact unit checking). Repeated measurements use the
+    first nonmissing value in source-file order.
     """
     import pandas as pd
     table = read_table(Path(dataset) / "clinical_data" / "measurement.csv")

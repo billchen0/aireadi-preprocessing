@@ -1,4 +1,4 @@
-"""Preserve OMOP long tables; pivot only with an explicit concept/unit selection."""
+"""Apply standardized names while preserving original measurement values."""
 import pandas as pd
 
 
@@ -12,10 +12,10 @@ def read_table(path, sep=","):
 
 
 def pivot_measurements(df, mapping):
-    """mapping CSV: concept_id,name,unit. Reject ambiguous participant features."""
-    required = {"concept_id", "name", "unit"}
+    """Use the first nonmissing value per participant/code, as in the original extractor."""
+    required = {"concept_id", "name"}
     if not required.issubset(mapping.columns) or mapping.empty:
-        raise ValueError("Mapping requires concept_id,name,unit")
+        raise ValueError("Mapping requires concept_id,name (optional unit)")
     if mapping.name.eq("").any() or mapping.concept_id.eq("").any() or mapping.name.eq("person_id").any():
         raise ValueError("Invalid mapping name or concept ID")
     if mapping.name.duplicated().any() or mapping.concept_id.duplicated().any():
@@ -24,30 +24,27 @@ def pivot_measurements(df, mapping):
     if not needed.issubset(df.columns):
         raise ValueError("Measurement table lacks required columns")
     selected = df.merge(mapping, left_on="measurement_concept_id", right_on="concept_id", how="inner", validate="many_to_one")
-    if (selected.unit_source_value != selected.unit).any():
+    if "unit" in mapping and (selected.unit_source_value != selected.unit).any():
         raise ValueError("Measurement unit does not match mapping; no implicit conversion")
-    if selected.duplicated(["person_id", "name"]).any():
-        raise ValueError("Repeated participant/concept values require a study-specific aggregation")
     selected["value_as_number"] = pd.to_numeric(selected.value_as_number.replace("", float("nan")), errors="raise")
-    result = selected.pivot(index="person_id", columns="name", values="value_as_number")
+    result = selected.pivot_table(index="person_id", columns="name", values="value_as_number", aggfunc="first")
     return result.reindex(index=df.person_id.drop_duplicates(), columns=mapping.name).reset_index()
 
 
 def measurement_mapping(df):
-    """Read the code, label and unit dictionary carried in measurement.csv."""
-    needed = {"measurement_concept_id", "measurement_source_value", "unit_source_value", "value_as_number"}
-    if not needed.issubset(df.columns):
-        raise ValueError("Automatic mapping needs measurement_source_value and unit_source_value; supply an explicit mapping instead")
-    numeric = df[df.value_as_number.ne("")].copy()
-    mapping = numeric[["measurement_concept_id", "measurement_source_value", "unit_source_value"]].drop_duplicates()
-    mapping = mapping.rename(columns={"measurement_concept_id": "concept_id", "measurement_source_value": "name", "unit_source_value": "unit"})
-    if mapping.empty:
-        raise ValueError("No numeric measurements found")
-    if mapping.concept_id.isin(["", "0"]).any():
-        raise ValueError("Unmapped numeric concepts found; supply an explicit mapping")
-    if mapping.concept_id.duplicated().any():
-        raise ValueError("A concept has multiple source labels or units; supply an explicit concept_id,name,unit mapping")
-    mapping.loc[mapping.name.eq(""), "name"] = "concept_" + mapping.loc[mapping.name.eq(""), "concept_id"]
-    repeated_names = mapping.name.duplicated(keep=False) | mapping.name.eq("person_id")
-    mapping.loc[repeated_names, "name"] += " [" + mapping.loc[repeated_names, "concept_id"] + "]"
-    return mapping.sort_values("concept_id").reset_index(drop=True)
+    """Select the bundled standardized names by measurement concept ID."""
+    import json
+    from importlib.resources import files
+    definitions = json.loads(files("aireadi_preprocessing").joinpath("mappings.json").read_text())
+    present = set(df.measurement_concept_id)
+    rows = []
+    for domain, names in definitions.items():
+        if domain == "observations":
+            continue
+        for concept_id, name in names.items():
+            if concept_id in present:
+                units = sorted(set(df.loc[df.measurement_concept_id.eq(concept_id), "unit_source_value"]))
+                rows.append({"concept_id": concept_id, "name": name, "domain": domain, "source_units": json.dumps(units)})
+    if not rows:
+        raise ValueError("No measurement codes match the bundled mapping; supply a custom mapping")
+    return pd.DataFrame(rows)

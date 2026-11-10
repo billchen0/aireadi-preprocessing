@@ -18,7 +18,7 @@ def main():
     parser.add_argument("--dataset-root", type=Path, help=argparse.SUPPRESS)
     parser.add_argument("--output", type=Path, help=argparse.SUPPRESS)
     parser.add_argument("--release", default="3.0.0", choices=["3.0.0"])
-    parser.add_argument("--mapping", "--measurement-mapping", dest="measurement_mapping", type=Path, help="Selected concept_id,name,unit CSV")
+    parser.add_argument("--mapping", "--measurement-mapping", dest="measurement_mapping", type=Path, help="Custom concept_id,name CSV (optional unit)")
     args = parser.parse_args()
     if args.dataset and args.dataset_root or args.destination and args.output:
         parser.error("Specify each path once")
