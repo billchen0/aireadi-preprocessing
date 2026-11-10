@@ -1,22 +1,18 @@
-"""Load AI-READI files into pandas tables."""
+"""Load categorized long-format clinical tables."""
 from pathlib import Path
-from .tables import read_table, pivot_measurements, measurement_mapping
+from .tables import read_table, split_measurements, name_observations
 
 
-def load_clinical(dataset, mapping=None):
-    """Return a participant-by-feature numeric measurement table.
+def load_clinical(dataset):
+    """Return a dict of category names to long-format pandas DataFrames.
 
-    Default names come from the bundled concept-ID dictionary.
-    An optional CSV/DataFrame can select or rename codes (concept_id,name;
-    optional unit for exact unit checking). Repeated measurements use the
-    first nonmissing value in source-file order.
+    All source columns, repeated observations and missing values are preserved.
+    variable_name is added using the bundled mapping. Unknown measurement codes
+    go to unmapped_measurements. observation.csv is included when present.
     """
-    import pandas as pd
-    table = read_table(Path(dataset) / "clinical_data" / "measurement.csv")
-    if mapping is None:
-        mapping = measurement_mapping(table)
-    elif isinstance(mapping, (str, Path)):
-        mapping = pd.read_csv(mapping, dtype=str, keep_default_na=False)
-    else:
-        mapping = mapping.copy().astype(str)
-    return pivot_measurements(table, mapping)
+    clinical = Path(dataset) / "clinical_data"
+    tables = split_measurements(read_table(clinical / "measurement.csv"))
+    observations = clinical / "observation.csv"
+    if observations.exists():
+        tables["observations"] = name_observations(read_table(observations))
+    return tables

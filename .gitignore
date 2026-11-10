@@ -13,3 +13,5 @@ runs/
 
 .local/
 .ipynb_checkpoints/
+
+processed/

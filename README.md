@@ -1,11 +1,6 @@
 # AI-READI preprocessing
 
-This package converts clinical OMOP tables into CSV files with one row per participant and named measurement columns.
-
-| Modality | AI-READI format | Tabular output format |
-| --- | --- | --- |
-| Clinical measurements | OMOP `measurement.csv`: one measurement per row | `measurement_wide.csv`: one participant per row, one measurement per column |
-| Clinical observations | OMOP `observation.csv` | `observation_long.csv`: original fields preserved |
+Split AI-READI clinical OMOP tables into categorized, long-format CSVs. Each row is a measurement or observation, with its source fields preserved and a readable `variable_name` added.
 
 ## Run
 
@@ -15,29 +10,29 @@ Requires Python 3.10 or later.
 git clone https://github.com/billchen0/aireadi-preprocessing.git
 cd aireadi-preprocessing
 pip install .
-aireadi-preprocess /path/to/ai-readi /path/to/tables
+aireadi-preprocess /path/to/ai-readi
 ```
 
-Choose a new output folder outside the dataset and repository. The command also saves `clinical_mapping.csv`, the original long measurement table, and a conversion record in `run.json`.
+This creates `processed/` beside the dataset. To choose its location:
+
+```sh
+aireadi-preprocess /path/to/ai-readi /path/to/processed
+```
+
+Use a new folder outside the source dataset.
+
+| Category | AI-READI input | Long-format output |
+| --- | --- | --- |
+| Laboratory tests | `clinical_data/measurement.csv` | `processed/lab_test.csv` |
+| Vision | `clinical_data/measurement.csv` | `processed/vision.csv` |
+| Physical assessment | `clinical_data/measurement.csv` | `processed/physical.csv` |
+| MoCA | `clinical_data/measurement.csv` | `processed/moca.csv` |
+| Monofilament | `clinical_data/measurement.csv` | `processed/monofilament.csv` |
+| Observations, when present | `clinical_data/observation.csv` | `processed/observations.csv` |
 
 ## How the mapping works
 
-The [AI-READI mapping JSON](https://github.com/AI-READI/ai-readi-docs/blob/main/docs/static/json/mappings.json) defines the identifiers. This is an excerpt of its HbA1c entry:
-
-```json
-{
-  "FIELD_ID": "import_hba1c",
-  "SRC_CODE": "4548-4",
-  "TARGET_CONCEPT_ID": "3004410",
-  "TARGET_CONCEPT_NAME": "Hemoglobin A1c/Hemoglobin.total in Blood",
-  "TARGET_DOMAIN_ID": "Measurement"
-}
-```
-
-- `FIELD_ID` identifies the original collection field.
-- `SRC_CODE` is the source terminology code, here the LOINC code for HbA1c.
-- `TARGET_CONCEPT_ID` is the OMOP identifier matched to `measurement_concept_id` in the data. For this measurement, use `3004410`, not `4548-4`.
-- `TARGET_CONCEPT_NAME` gives the clinical meaning. The [lab dictionary](https://github.com/AI-READI/ai-readi-docs/blob/main/docs/static/json/clinicalLabData.json) also gives the shorter `Name` (HbA1c) and `Units` (%).
+The [official mapping JSON](https://github.com/AI-READI/ai-readi-docs/blob/main/docs/static/json/mappings.json) defines `TARGET_CONCEPT_ID` and `TARGET_CONCEPT_NAME`. Match `TARGET_CONCEPT_ID` to the data’s `measurement_concept_id`; our bundled mapping supplies the standardized name and category.
 
 Variable names are standardized because some source labels are truncated or difficult to find with a column search. The bundled [mappings.json](src/aireadi_preprocessing/mappings.json) maps each identifier to a readable name:
 
@@ -49,53 +44,34 @@ Variable names are standardized because some source labels are truncated or diff
 }
 ```
 
-| Identifier | Source label | Standardized column name |
+| Identifier | Source label | Standardized variable name |
 | --- | --- | --- |
 | 3004410 | `import_hba1c, Hemoglobin A1c/Hemoglobin.total in ` | HbA1c (%) |
 | 3004501 | `import_glucose, Glucose [Mass/volume] in Serum or` | Glucose (mg/dL) |
 | 2005200344 | `trails_visuospatial_executive` | MoCA Trail Making Score |
 
-- Match `measurement_concept_id` to the bundled identifier; use its standardized name as the column header.
-- Put `value_as_number` in that column, with one row per `person_id`. For repeated participant/code pairs, take the first nonmissing value in file order, matching the original extraction rule.
-- Save the selected dictionary and observed source units as `clinical_mapping.csv`. Naming does not convert units or change numerical values. The original long table retains all source fields.
-- The dictionary groups measurements by lab, vision, physical assessment, MoCA and monofilament. It also retains observation names for reference; observation output remains in long format.
+- The bundled mapping groups identifiers by category. `measurement_concept_id` determines the output CSV and its standardized `variable_name`.
+- Original values, units, source labels, dates and other fields are copied unchanged. Repeated measurements and missing values remain as separate rows; nothing is pivoted or averaged.
+- Unknown measurement codes go to `unmapped_measurements.csv`. Unmapped observation names remain empty. Rows are not silently discarded.
 
-For example, these fictional input rows:
+For example, `lab_test.csv` contains rows like these (fictional values; only selected columns shown):
 
-| person_id | measurement_concept_id | measurement_source_value | unit_source_value | value_as_number |
+| person_id | measurement_concept_id | variable_name | value_as_number | unit_source_value |
 | --- | --- | --- | --- | --- |
-| 0007 | 3004410 | import_hba1c, Hemoglobin A1c/Hemoglobin.total in | % | 5.5 |
-| 0012 | 3004410 | import_hba1c, Hemoglobin A1c/Hemoglobin.total in | % | 6.0 |
+| 0007 | 3004410 | HbA1c (%) | 5.5 | % |
+| 0007 | 3004501 | Glucose (mg/dL) | 95 | mg/dL |
+| 0012 | 3004410 | HbA1c (%) | 6.0 | % |
 
-produce:
-
-| person_id | HbA1c (%) |
-| --- | --- |
-| 0007 | 5.5 |
-| 0012 | 6.0 |
-
-To select measurements or change their labels, create a mapping CSV with these columns:
-
-| concept_id | name | unit |
-| --- | --- | --- |
-| 3004410 | HbA1c (%) | % |
-
-```sh
-aireadi-preprocess /path/to/ai-readi /path/to/tables --mapping my_mapping.csv
-```
-
-- In a custom mapping, `unit` is optional. When supplied, it must match the source exactly. No unit conversion is performed.
-- Missing measurements stay empty. Participant IDs stay as text.
-- Renaming preserves raw measurement values; it does not add calculated indices or combine measurements across eyes.
-- Observation values remain in the long table.
+A `run.json` file records output row counts and hashes. All five measurement CSVs are created, even when a category has no rows.
 
 ## Notebook
 
-[load_data.ipynb](load_data.ipynb) shows how to inspect the mapping, load clinical measurements and save a CSV.
+[load_data.ipynb](load_data.ipynb) shows how to load, inspect and save the category tables:
 
 ```python
 from aireadi_preprocessing import load_clinical
 
-clinical = load_clinical("/path/to/ai-readi")
-clinical.head()
+tables = load_clinical("/path/to/ai-readi")
+labs = tables["lab_test"]
+labs.head()
 ```

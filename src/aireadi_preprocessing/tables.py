@@ -1,4 +1,6 @@
-"""Apply standardized names while preserving original measurement values."""
+"""Split clinical rows by category and attach standardized variable names."""
+import json
+from importlib.resources import files
 import pandas as pd
 
 
@@ -11,40 +13,40 @@ def read_table(path, sep=","):
     return df
 
 
-def pivot_measurements(df, mapping):
-    """Use the first nonmissing value per participant/code, as in the original extractor."""
-    required = {"concept_id", "name"}
-    if not required.issubset(mapping.columns) or mapping.empty:
-        raise ValueError("Mapping requires concept_id,name (optional unit)")
-    if mapping.name.eq("").any() or mapping.concept_id.eq("").any() or mapping.name.eq("person_id").any():
-        raise ValueError("Invalid mapping name or concept ID")
-    if mapping.name.duplicated().any() or mapping.concept_id.duplicated().any():
-        raise ValueError("Mapping names and concepts must be unique")
-    needed = {"person_id", "measurement_concept_id", "unit_source_value", "value_as_number"}
-    if not needed.issubset(df.columns):
-        raise ValueError("Measurement table lacks required columns")
-    selected = df.merge(mapping, left_on="measurement_concept_id", right_on="concept_id", how="inner", validate="many_to_one")
-    if "unit" in mapping and (selected.unit_source_value != selected.unit).any():
-        raise ValueError("Measurement unit does not match mapping; no implicit conversion")
-    selected["value_as_number"] = pd.to_numeric(selected.value_as_number.replace("", float("nan")), errors="raise")
-    result = selected.pivot_table(index="person_id", columns="name", values="value_as_number", aggfunc="first")
-    return result.reindex(index=df.person_id.drop_duplicates(), columns=mapping.name).reset_index()
+def clinical_mappings():
+    """Load the bundled category -> concept ID -> standardized name dictionary."""
+    return json.loads(files("aireadi_preprocessing").joinpath("mappings.json").read_text())
 
 
-def measurement_mapping(df):
-    """Select the bundled standardized names by measurement concept ID."""
-    import json
-    from importlib.resources import files
-    definitions = json.loads(files("aireadi_preprocessing").joinpath("mappings.json").read_text())
-    present = set(df.measurement_concept_id)
-    rows = []
-    for domain, names in definitions.items():
-        if domain == "observations":
+def split_measurements(df):
+    """Preserve every source field and row, including repeats and missing values."""
+    if "measurement_concept_id" not in df:
+        raise ValueError("measurement_concept_id is required")
+    if "variable_name" in df:
+        raise ValueError("Input already contains variable_name; refusing to overwrite")
+    tables = {}
+    seen = set()
+    for category, names in clinical_mappings().items():
+        if category == "observations":
             continue
-        for concept_id, name in names.items():
-            if concept_id in present:
-                units = sorted(set(df.loc[df.measurement_concept_id.eq(concept_id), "unit_source_value"]))
-                rows.append({"concept_id": concept_id, "name": name, "domain": domain, "source_units": json.dumps(units)})
-    if not rows:
-        raise ValueError("No measurement codes match the bundled mapping; supply a custom mapping")
-    return pd.DataFrame(rows)
+        if seen.intersection(names):
+            raise ValueError("A measurement code belongs to multiple categories")
+        seen.update(names)
+        part = df.loc[df.measurement_concept_id.isin(names)].copy()
+        part["variable_name"] = part.measurement_concept_id.map(names)
+        tables[category] = part.reset_index(drop=True)
+    other = df.loc[~df.measurement_concept_id.isin(seen)].copy()
+    if not other.empty:
+        other["variable_name"] = ""
+        tables["unmapped_measurements"] = other.reset_index(drop=True)
+    return tables
+
+
+def name_observations(df):
+    if "observation_concept_id" not in df:
+        raise ValueError("observation_concept_id is required")
+    if "variable_name" in df:
+        raise ValueError("Input already contains variable_name; refusing to overwrite")
+    result = df.copy()
+    result["variable_name"] = result.observation_concept_id.map(clinical_mappings()["observations"]).fillna("")
+    return result
